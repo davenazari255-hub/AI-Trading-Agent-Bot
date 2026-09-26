@@ -31,7 +31,13 @@ def _error(error_code: str, message: str) -> dict[str, Any]:
 
 
 class HealthServer:
-    def __init__(self, provider: HealthProvider, *, host: str = "0.0.0.0", port: int = 8081) -> None:
+    def __init__(
+        self,
+        provider: HealthProvider,
+        *,
+        host: str = "0.0.0.0",
+        port: int = 8081,
+    ) -> None:
         self._provider = provider
         self._host = host
         self._port = port
