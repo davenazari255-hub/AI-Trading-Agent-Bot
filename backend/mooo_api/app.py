@@ -17,7 +17,9 @@ from mooo_core.config import Settings, load_settings_or_exit
 def create_app(settings: Settings | None = None, *, redis: Redis | None = None) -> FastAPI:
     resolved = settings if settings is not None else load_settings_or_exit()
     owns_redis = redis is None
-    client = redis if redis is not None else Redis.from_url(resolved.redis_url, decode_responses=True)
+    client = redis
+    if client is None:
+        client = Redis.from_url(resolved.redis_url, decode_responses=True)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
