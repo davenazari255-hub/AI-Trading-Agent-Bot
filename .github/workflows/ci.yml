@@ -32,6 +32,7 @@ jobs:
           --health-retries 20
     defaults:
       run:
+        shell: bash
         working-directory: backend
     env:
       DATABASE_URL: postgresql+asyncpg://mooo:mooo@localhost:5432/mooo
@@ -46,18 +47,27 @@ jobs:
           cache: pip
           cache-dependency-path: backend/pyproject.toml
       - name: Install
+        id: install
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          python -m pip install -q --upgrade pip
+          pip install -q -e ".[dev]"
+          ruff --version
+          mypy --version
       - name: Generate a throwaway master key (CI only)
         run: echo "MOOO_MASTER_KEY=$(python -c 'import base64, os; print(base64.b64encode(os.urandom(32)).decode())')" >> "$GITHUB_ENV"
       - name: Ruff
-        run: ruff check .
+        if: always() && steps.install.outcome == 'success'
+        run: ruff check . --output-format=github
       - name: Mypy
-        run: mypy
+        if: always() && steps.install.outcome == 'success'
+        run: |
+          set -o pipefail
+          mypy --no-error-summary --show-column-numbers 2>&1 | tee mypy.txt | sed -E 's#^([^:]+):([0-9]+):([0-9]+): error: (.*)$#::error file=backend/\1,line=\2,col=\3::\4#'
       - name: Pytest
-        run: pytest -q
+        if: always() && steps.install.outcome == 'success'
+        run: pytest -q -rfE --tb=short -p no:cacheprovider
       - name: Alembic upgrade
+        if: always() && steps.install.outcome == 'success'
         run: alembic upgrade head
 
   web:
@@ -87,7 +97,7 @@ jobs:
       - name: Validate compose file
         run: docker compose config --quiet
       - name: Build images
-        run: docker compose build
+        run: docker compose build --quiet
       - name: Start stack
         run: docker compose up -d
       - name: Wait for API, worker heartbeat, and web
@@ -104,7 +114,7 @@ jobs:
             fi
             sleep 3
           done
-          echo "Stack did not become healthy"
+          echo "::error::Stack did not become healthy"
           exit 1
       - name: Show service status and logs
         if: always()
