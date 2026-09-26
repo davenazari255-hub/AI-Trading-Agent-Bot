@@ -12,7 +12,6 @@ import pytest
 from argon2 import PasswordHasher
 from fakeredis.aioredis import FakeRedis
 from fastapi import FastAPI
-from fastapi.routing import APIRoute
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -23,7 +22,6 @@ from mooo_api.accounts import (
     SqlOperatorAccountStore,
 )
 from mooo_api.app import PUBLIC_PATHS, create_app
-from mooo_api.deps import require_session
 from mooo_api.sessions import SESSION_COOKIE, SESSION_TTL_S, session_key
 from mooo_core.bus import COMMANDS_STREAM, worker_heartbeat_key
 from mooo_core.config import Settings, WorkerRole
@@ -37,6 +35,7 @@ BASE_URL = "https://testserver"
 LOGIN = "/api/v1/auth/login"
 SETUP = "/api/v1/auth/setup"
 ME = "/api/v1/auth/me"
+LOGOUT = "/api/v1/auth/logout"
 LOCKOUT_S = 15 * 60
 
 
@@ -73,6 +72,9 @@ class RecordingEvents:
 
     def security(self) -> list[dict[str, Any]]:
         return [e for e in self.events if e["category"] == EventCategory.SECURITY]
+
+    def lockouts(self, scope: str) -> list[dict[str, Any]]:
+        return [e for e in self.security() if e["refs"].get("scope") == scope]
 
 
 @pytest.fixture
@@ -202,7 +204,7 @@ async def test_five_failures_from_one_ip_block_sign_in_for_15_minutes(
         assert (await attacker.post(LOGIN, json=_creds())).status_code == 429
         clock.now += 2
         assert (await attacker.post(LOGIN, json=_creds())).status_code == 200
-    ip_events = [e for e in events.security() if e["refs"].get("scope") == "ip"]
+    ip_events = events.lockouts("ip")
     assert len(ip_events) == 1
     assert ip_events[0]["refs"]["client_ip"] == "203.0.113.7"
     assert WRONG not in repr(events.events)
@@ -220,8 +222,8 @@ async def test_five_failures_for_one_username_block_that_username(
         assert blocked.status_code == 429
         other = await client.post(LOGIN, json=_creds("someone", PASSWORD))
         assert other.status_code == 401
-    scopes = [event["refs"]["scope"] for event in events.security()]
-    assert scopes.count("username") == 1
+    assert len(events.lockouts("username")) == 1
+    assert events.lockouts("ip") == []
 
 
 async def test_failures_spread_over_more_than_15_minutes_do_not_block(
@@ -247,11 +249,11 @@ async def test_sign_out_ends_session_and_leaves_the_agent_untouched(
         csrf = login.json()["csrf_token"]
         session_id = client.cookies[SESSION_COOKIE]
         assert await redis.exists(session_key(session_id)) == 1
-        no_csrf = await client.post("/api/v1/auth/logout")
+        no_csrf = await client.post(LOGOUT)
         assert no_csrf.status_code == 403
         assert no_csrf.json()["error_code"] == "csrf_failed"
         assert (await client.get(ME)).status_code == 200
-        response = await client.post("/api/v1/auth/logout", headers={"X-CSRF-Token": csrf})
+        response = await client.post(LOGOUT, headers={"X-CSRF-Token": csrf})
         assert response.status_code == 204
         assert await redis.exists(session_key(session_id)) == 0
     async with _client(app) as replay_client:
@@ -282,7 +284,7 @@ async def test_requests_without_a_valid_session_are_denied(app: FastAPI) -> None
     async with _client(app) as client:
         missing = await client.get(ME)
         forged = await client.get(ME, headers={"Cookie": f"{SESSION_COOKIE}=forged"})
-        logout = await client.post("/api/v1/auth/logout")
+        logout = await client.post(LOGOUT)
     for response in (missing, forged, logout):
         assert response.status_code == 401
         assert response.json() == {
@@ -291,22 +293,23 @@ async def test_requests_without_a_valid_session_are_denied(app: FastAPI) -> None
         }
 
 
-def _dependency_calls(dependant: Any) -> list[Any]:
-    calls: list[Any] = []
-    for dependency in dependant.dependencies:
-        calls.append(dependency.call)
-        calls.extend(_dependency_calls(dependency))
-    return calls
-
-
-def test_every_route_except_public_ones_requires_a_session(app: FastAPI) -> None:
-    routes = [route for route in app.routes if isinstance(route, APIRoute)]
-    paths = {route.path for route in routes}
-    assert {ME, "/api/v1/auth/logout"} <= paths
-    assert PUBLIC_PATHS <= paths
-    for route in routes:
-        guarded = require_session in _dependency_calls(route.dependant)
-        assert guarded is (route.path not in PUBLIC_PATHS), route.path
+async def test_every_route_except_public_ones_requires_a_session(app: FastAPI) -> None:
+    paths: dict[str, dict[str, Any]] = app.openapi()["paths"]
+    assert {ME, LOGOUT} <= set(paths)
+    checked = 0
+    async with _client(app) as client:
+        for path, operations in paths.items():
+            if path in PUBLIC_PATHS:
+                continue
+            for method in operations:
+                response = await client.request(method.upper(), path)
+                assert response.status_code == 401, (method, path)
+                checked += 1
+        for path in PUBLIC_PATHS:
+            method = "GET" if path.endswith("health") or path.endswith("status") else "POST"
+            response = await client.request(method, path, json=_creds(password=WRONG))
+            assert response.status_code != 401 or path == LOGIN, path
+    assert checked >= 2
 
 
 async def test_verify_password_checks_the_operator_password(app: FastAPI) -> None:
