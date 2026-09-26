@@ -12,10 +12,16 @@ from redis.asyncio import Redis
 from mooo_api.health import router as health_router
 from mooo_core import __version__
 from mooo_core.config import Settings, load_settings_or_exit
+from mooo_core.log import configure_process_logging
 
 
 def create_app(settings: Settings | None = None, *, redis: Redis | None = None) -> FastAPI:
-    resolved = settings if settings is not None else load_settings_or_exit()
+    if settings is None:
+        # Production entry point (uvicorn --factory): JSON logs with secret redaction.
+        resolved = load_settings_or_exit()
+        configure_process_logging(resolved)
+    else:
+        resolved = settings
     owns_redis = redis is None
     client = redis
     if client is None:

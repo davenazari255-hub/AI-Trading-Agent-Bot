@@ -1,94 +1,106 @@
+"""InProcessBus: typed delivery and backpressure rules."""
+
 import asyncio
+import dataclasses
 
 import pytest
 
-from mooo_core.inprocess_bus import (
-    BusEvent,
+from mooo_worker.inprocess_bus import (
     InProcessBus,
     KlineClosed,
-    OrderBookUpdated,
     OrderEvent,
     PositionEvent,
+    SubscriptionClosed,
     TickerUpdated,
 )
-from mooo_core.models import Environment
-
-DEMO = Environment.DEMO
-
-
-def _ticker(price: float) -> TickerUpdated:
-    return TickerUpdated(environment=DEMO, symbol="BTCUSDT", data={"lastPrice": price})
-
-
-def _order(link: str) -> OrderEvent:
-    return OrderEvent(environment=DEMO, data={"orderLinkId": link})
 
 
 async def test_subscribers_receive_only_their_types() -> None:
     bus = InProcessBus()
-    tickers = bus.subscribe(TickerUpdated)
-    account = bus.subscribe(OrderEvent, PositionEvent)
-    everything = bus.subscribe(BusEvent)
-    bus.publish(_ticker(1))
-    bus.publish(_order("a"))
-    bus.publish(PositionEvent(environment=DEMO, data={"size": "0.1"}))
-    assert (len(tickers), len(account), len(everything)) == (1, 2, 3)
-    assert isinstance(await account.get(), OrderEvent)
+    tickers = bus.subscribe(TickerUpdated, name="tickers")
+    orders = bus.subscribe(OrderEvent, PositionEvent, name="orders")
+
+    assert bus.publish(TickerUpdated(symbol="BTCUSDT", data={"last": 1})) == 1
+    bus.publish(OrderEvent(symbol="BTCUSDT", data={"status": "New"}))
+    bus.publish(PositionEvent(symbol="BTCUSDT"))
+
+    assert (await tickers.get()).symbol == "BTCUSDT"
+    assert tickers.qsize == 0
+    assert isinstance(await orders.get(), OrderEvent)
+    assert isinstance(await orders.get(), PositionEvent)
 
 
-async def test_oldest_ticker_updates_are_dropped_under_backpressure() -> None:
+def test_backpressure_drops_oldest_ticker_updates() -> None:
     bus = InProcessBus()
-    subscription = bus.subscribe(TickerUpdated, maxsize=3)
-    for price in range(5):
-        bus.publish(_ticker(price))
-    assert len(subscription) == 3
-    assert subscription.dropped == 2
-    prices = []
-    while (event := subscription.get_nowait()) is not None:
-        prices.append(event.data["lastPrice"])
-    assert prices == [2, 3, 4]
+    sub = bus.subscribe(TickerUpdated, OrderEvent, maxsize=3)
+
+    bus.publish(TickerUpdated(symbol="BTCUSDT", data={"n": 1}))
+    bus.publish(OrderEvent(symbol="BTCUSDT", data={"n": "o1"}))
+    bus.publish(TickerUpdated(symbol="BTCUSDT", data={"n": 2}))
+    bus.publish(TickerUpdated(symbol="BTCUSDT", data={"n": 3}))
+    bus.publish(TickerUpdated(symbol="BTCUSDT", data={"n": 4}))
+
+    drained = []
+    while (event := sub.get_nowait()) is not None:
+        drained.append(event.data["n"])
+    assert drained == ["o1", 3, 4]
+    assert sub.dropped == 2
 
 
-async def test_order_events_are_never_dropped() -> None:
+def test_order_and_position_events_are_never_dropped() -> None:
     bus = InProcessBus()
-    subscription = bus.subscribe(OrderEvent, TickerUpdated, maxsize=2)
-    bus.publish(_ticker(1))
-    bus.publish(_ticker(2))
-    bus.publish(_order("a"))
+    sub = bus.subscribe(OrderEvent, PositionEvent, maxsize=2)
+
     for index in range(5):
-        bus.publish(_order(f"o{index}"))
-    bus.publish(_ticker(3))
+        bus.publish(OrderEvent(symbol="BTCUSDT", data={"n": index}))
+    bus.publish(PositionEvent(symbol="BTCUSDT"))
 
-    items = []
-    while (event := subscription.get_nowait()) is not None:
-        items.append(event)
-    orders = [item for item in items if isinstance(item, OrderEvent)]
-    assert [order.data["orderLinkId"] for order in orders] == ["a", "o0", "o1", "o2", "o3", "o4"]
-    assert not any(isinstance(item, TickerUpdated) for item in items)
-    assert subscription.dropped == 3
+    assert sub.qsize == 6
+    assert sub.dropped == 0
 
 
-async def test_get_waits_for_publish() -> None:
+def test_ticker_is_dropped_when_queue_holds_only_critical_events() -> None:
     bus = InProcessBus()
-    subscription = bus.subscribe(KlineClosed)
-    waiter = asyncio.create_task(subscription.get())
+    sub = bus.subscribe(TickerUpdated, OrderEvent, maxsize=1)
+
+    bus.publish(OrderEvent(symbol="BTCUSDT"))
+    bus.publish(TickerUpdated(symbol="BTCUSDT"))
+
+    assert sub.qsize == 1
+    assert sub.dropped == 1
+    assert isinstance(sub.get_nowait(), OrderEvent)
+
+
+async def test_iteration_ends_after_close() -> None:
+    bus = InProcessBus()
+    sub = bus.subscribe(KlineClosed, name="klines")
+    received: list[str] = []
+
+    async def consume() -> None:
+        async for event in sub:
+            received.append(event.interval)
+
+    task = asyncio.create_task(consume())
     await asyncio.sleep(0)
-    assert not waiter.done()
-    bus.publish(KlineClosed(environment=DEMO, symbol="ETHUSDT", interval="15", data={}))
-    event = await asyncio.wait_for(waiter, timeout=1)
-    assert event.interval == "15"
+    bus.publish(KlineClosed(symbol="BTCUSDT", interval="1"))
+    bus.publish(KlineClosed(symbol="BTCUSDT", interval="5"))
+    await asyncio.sleep(0)
+    sub.close()
+    await asyncio.wait_for(task, timeout=1)
 
-
-def test_unsubscribe_validation_and_drop_rules() -> None:
-    bus = InProcessBus()
-    subscription = bus.subscribe(TickerUpdated)
-    subscription.close()
-    assert bus.publish(_ticker(1)) == 0
+    assert received == ["1", "5"]
+    assert bus.publish(KlineClosed(symbol="BTCUSDT", interval="15")) == 0
     assert bus.subscriber_count == 0
+    with pytest.raises(SubscriptionClosed):
+        await sub.get()
+
+
+def test_validation_and_frozen_events() -> None:
+    bus = InProcessBus()
     with pytest.raises(ValueError):
         bus.subscribe()
     with pytest.raises(ValueError):
-        bus.subscribe(TickerUpdated, maxsize=0)
-    assert TickerUpdated.DROPPABLE and OrderBookUpdated.DROPPABLE
-    assert not OrderEvent.DROPPABLE
-    assert not PositionEvent.DROPPABLE
+        bus.subscribe(OrderEvent, maxsize=0)
+    event = OrderEvent(symbol="BTCUSDT")
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        event.symbol = "ETHUSDT"  # type: ignore[misc]
