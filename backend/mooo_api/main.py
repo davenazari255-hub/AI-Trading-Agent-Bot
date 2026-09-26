@@ -38,11 +38,14 @@ def error_body(error_code: str, message: str) -> dict[str, str]:
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Create the API application. Loads settings from the environment when not given."""
+    resolved: Settings
     if settings is None:
-        settings = load_settings_or_exit()
-        configure_logging(settings.log_level)
+        resolved = load_settings_or_exit()
+        configure_logging(resolved.log_level)
+    else:
+        resolved = settings
 
-    docs_enabled = not settings.is_production
+    docs_enabled = not resolved.is_production
     app = FastAPI(
         title="Mooo API",
         version=__version__,
@@ -50,7 +53,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url=None,
         openapi_url="/openapi.json" if docs_enabled else None,
     )
-    app.state.settings = settings
+    app.state.settings = resolved
 
     @app.exception_handler(StarletteHTTPException)
     async def _http_error(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
@@ -83,13 +86,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "status": "ok",
             "service": "api",
             "version": __version__,
-            "app_env": settings.app_env.value,
-            "bybit_env": settings.bybit_env.value,
+            "app_env": resolved.app_env.value,
+            "bybit_env": resolved.bybit_env.value,
         }
 
     logger.info(
         "Mooo API configured (app_env=%s, bybit_env=%s)",
-        settings.app_env.value,
-        settings.bybit_env.value,
+        resolved.app_env.value,
+        resolved.bybit_env.value,
     )
     return app
