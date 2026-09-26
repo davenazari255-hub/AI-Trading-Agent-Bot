@@ -1,0 +1,126 @@
+{
+  "wallet_balance": {
+    "retCode": 0,
+    "retMsg": "OK",
+    "result": {
+      "list": [
+        {
+          "accountType": "UNIFIED",
+          "totalEquity": "10000.00",
+          "totalWalletBalance": "10000.00",
+          "totalAvailableBalance": "9800.00",
+          "totalInitialMargin": "200.00",
+          "totalMaintenanceMargin": "20.00",
+          "accountIMRate": "0.02",
+          "accountMMRate": "0.002",
+          "coin": [
+            {
+              "coin": "USDT",
+              "equity": "10000.00",
+              "walletBalance": "10000.00",
+              "unrealisedPnl": "0",
+              "cumRealisedPnl": "0",
+              "locked": "0"
+            }
+          ]
+        }
+      ]
+    },
+    "retExtInfo": {},
+    "time": 1700000000123
+  },
+  "order_create": {
+    "retCode": 0,
+    "retMsg": "OK",
+    "result": {
+      "orderId": "1321003749386327552",
+      "orderLinkId": "mooo-test-1"
+    },
+    "retExtInfo": {},
+    "time": 1700000000456
+  },
+  "positions": {
+    "retCode": 0,
+    "retMsg": "OK",
+    "result": {
+      "list": [
+        {
+          "positionIdx": 0,
+          "symbol": "BTCUSDT",
+          "side": "Buy",
+          "size": "0.001",
+          "avgPrice": "35000",
+          "leverage": "3",
+          "markPrice": "35010",
+          "positionValue": "35",
+          "unrealisedPnl": "0.01",
+          "stopLoss": "34000",
+          "takeProfit": "",
+          "liqPrice": "23500",
+          "createdTime": "1699990000000",
+          "updatedTime": "1700000000000"
+        }
+      ],
+      "nextPageCursor": "",
+      "category": "linear"
+    },
+    "retExtInfo": {},
+    "time": 1700000000789
+  },
+  "tickers": {
+    "retCode": 0,
+    "retMsg": "OK",
+    "result": {
+      "category": "linear",
+      "list": [
+        {
+          "symbol": "BTCUSDT",
+          "lastPrice": "35000.10",
+          "bid1Price": "35000.00",
+          "ask1Price": "35000.20",
+          "turnover24h": "1500000000",
+          "fundingRate": "0.0001",
+          "openInterest": "55000",
+          "nextFundingTime": "1700006400000"
+        }
+      ]
+    },
+    "retExtInfo": {},
+    "time": 1700000000111
+  },
+  "error_rate_limit": {
+    "retCode": 10006,
+    "retMsg": "Too many visits!",
+    "result": {},
+    "retExtInfo": {},
+    "time": 1700000000222
+  },
+  "error_invalid_api_key": {
+    "retCode": 10003,
+    "retMsg": "API key is invalid.",
+    "result": {},
+    "retExtInfo": {},
+    "time": 1700000000333
+  },
+  "error_timestamp": {
+    "retCode": 10002,
+    "retMsg": "invalid request, please check your server timestamp or recv_window param. req_timestamp[1700000000000],server_timestamp[1700000006000],recv_window[5000]",
+    "result": {},
+    "retExtInfo": {},
+    "time": 1700000006000
+  },
+  "error_insufficient_balance": {
+    "retCode": 110007,
+    "retMsg": "ab not enough for new order",
+    "result": {},
+    "retExtInfo": {},
+    "time": 1700000000444
+  },
+  "error_server": {
+    "retCode": 10016,
+    "retMsg": "Server error.",
+    "result": {},
+    "retExtInfo": {},
+    "time": 1700000000555
+  }
+}
