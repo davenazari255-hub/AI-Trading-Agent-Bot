@@ -37,6 +37,10 @@ include = ["mooo_core*", "mooo_api*", "mooo_worker*"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+addopts = "-m 'not demo'"
+markers = [
+    "demo: opt-in tests against Bybit Demo Trading (run with pytest -m demo)",
+]
 
 [tool.ruff]
 line-length = 100
