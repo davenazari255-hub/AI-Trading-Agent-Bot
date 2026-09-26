@@ -1,0 +1,29 @@
+# Mooo reverse proxy.
+# MOOO_DOMAIN defaults to localhost (Caddy local CA). Set it to the public domain on a VPS
+# to get automatic HTTPS. PostgreSQL and Redis are never exposed through Caddy.
+
+{$MOOO_DOMAIN:localhost} {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# REST API
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	# Live stream WebSocket
+	handle /ws/* {
+		reverse_proxy api:8000
+	}
+
+	# Dashboard
+	handle {
+		reverse_proxy web:3000
+	}
+}
