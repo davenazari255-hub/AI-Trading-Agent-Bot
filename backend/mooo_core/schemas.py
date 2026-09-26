@@ -127,10 +127,12 @@ def initial_discovery_settings() -> DiscoverySettingsSchema:
 
 def initial_agent_settings() -> dict[str, int]:
     """Initial Agent Settings columns: budget per hour, cooldown and anchor review in seconds."""
+    cooldown_minutes = AGENT_DEFAULTS["deep_analysis_cooldown_minutes"]
+    anchor_minutes = AGENT_DEFAULTS["anchor_review_minutes"]
     return {
         "ai_analysis_budget": int(AGENT_DEFAULTS["ai_analyses_per_hour"]),
-        "deep_analysis_cooldown_seconds": int(AGENT_DEFAULTS["deep_analysis_cooldown_minutes"] * 60),
-        "anchor_review_interval_seconds": int(AGENT_DEFAULTS["anchor_review_minutes"] * 60),
+        "deep_analysis_cooldown_seconds": int(cooldown_minutes * 60),
+        "anchor_review_interval_seconds": int(anchor_minutes * 60),
     }
 
 

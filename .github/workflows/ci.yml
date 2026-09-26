@@ -63,12 +63,44 @@ jobs:
         run: |
           set -o pipefail
           mypy --no-error-summary --show-column-numbers 2>&1 | tee mypy.txt | sed -E 's#^([^:]+):([0-9]+):([0-9]+): error: (.*)$#::error file=backend/\1,line=\2,col=\3::\4#'
+      - name: Migrations (upgrade, drift check, downgrade, re-upgrade)
+        id: migrations
+        if: always() && steps.install.outcome == 'success'
+        run: |
+          run_step() {
+            local title="$1"; shift
+            local out
+            if ! out=$("$@" 2>&1); then
+              echo "$out"
+              local msg
+              msg=$(printf '%s\n' "$out" | tail -n 40 | sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}')
+              echo "::error title=${title}::${msg}"
+              exit 1
+            fi
+            echo "$out"
+          }
+          run_step "alembic upgrade" alembic upgrade head
+          run_step "alembic check" alembic check
+          run_step "alembic downgrade" alembic downgrade base
+          run_step "alembic re-upgrade" alembic upgrade head
       - name: Pytest
         if: always() && steps.install.outcome == 'success'
-        run: pytest -q -rfE --tb=short -p no:cacheprovider
-      - name: Alembic upgrade
-        if: always() && steps.install.outcome == 'success'
-        run: alembic upgrade head
+        env:
+          MOOO_TEST_DATABASE_URL: postgresql+asyncpg://mooo:mooo@localhost:5432/mooo
+        run: pytest -q -rfE --tb=short -p no:cacheprovider --junitxml=pytest.xml
+      - name: Pytest failure annotations
+        if: failure() && hashFiles('backend/pytest.xml') != ''
+        run: |
+          python - <<'EOF'
+          import xml.etree.ElementTree as ET
+          root = ET.parse("pytest.xml").getroot()
+          for case in root.iter("testcase"):
+              for kind in ("failure", "error"):
+                  for node in case.findall(kind):
+                      body = (node.get("message") or "") + " | " + (node.text or "")[-2500:]
+                      body = body.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+                      print(f"::error title={case.get('classname')}.{case.get('name')}::{body}")
+          EOF
 
   web:
     name: Web build
@@ -116,6 +148,8 @@ jobs:
           done
           echo "::error::Stack did not become healthy"
           exit 1
+      - name: Check migrations ran in the stack
+        run: docker compose exec -T postgres psql -U "${POSTGRES_USER:-mooo}" -d "${POSTGRES_DB:-mooo}" -tAc "SELECT version_num FROM alembic_version" | grep -q 0001_initial_schema
       - name: Show service status and logs
         if: always()
         run: |
