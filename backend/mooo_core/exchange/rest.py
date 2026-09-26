@@ -105,7 +105,8 @@ def encode_query(params: Mapping[str, Any] | None) -> str:
     """Encode query parameters in the given order. The same string is signed and sent."""
     if not params:
         return ""
-    return urlencode([(key, _param_text(value)) for key, value in params.items() if value is not None])
+    pairs = [(key, _param_text(value)) for key, value in params.items() if value is not None]
+    return urlencode(pairs)
 
 
 def encode_body(body: Mapping[str, Any] | None) -> str:
