@@ -54,7 +54,7 @@ _INLINE_SECRET = re.compile(
     r"(\s*[:=]\s*)([\"']?)([^\s\"',;&]+)"
 )
 _BEARER = re.compile(r"(?i)\b(bearer)\s+[a-z0-9._~+/=-]+")
-_SCALARS = (int, float, Decimal, datetime, date, UUID, Enum, type(None))
+_SCALARS: tuple[type, ...] = (bool, int, float, Decimal, datetime, date, UUID, Enum, type(None))
 
 
 def is_sensitive_name(name: str) -> bool:
@@ -114,7 +114,7 @@ class SecretRedactor:
             return self.redact_text(value)
         if isinstance(value, bytes | bytearray):
             return f"<{len(value)} bytes>"
-        if isinstance(value, bool | _SCALARS):
+        if isinstance(value, _SCALARS):
             return value
         if isinstance(value, Mapping):
             return {key: self._redact_item(key, item, _depth) for key, item in value.items()}

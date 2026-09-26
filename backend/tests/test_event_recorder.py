@@ -66,7 +66,8 @@ async def test_events_are_redacted_before_write_and_publish() -> None:
     stored = sink.events[0]
     assert SECRET not in stored.message
     assert REDACTED in stored.message
-    assert stored.refs == {"api_secret": REDACTED, "masked_key": "****6789", "detail": f"x {REDACTED}"}
+    expected_refs = {"api_secret": REDACTED, "masked_key": "****6789", "detail": f"x {REDACTED}"}
+    assert stored.refs == expected_refs
     assert stored.correlation_id == correlation_id
 
     channel, message = publisher.messages[0]
@@ -82,12 +83,13 @@ async def test_events_of_one_proposal_share_correlation_id_in_order() -> None:
     sink = MemorySink()
     recorder = EventRecorder(sink)
     correlation_id = uuid.uuid4()
-    for message in ("proposal", "risk verdict", "order submitted"):
+    steps = ["proposal", "risk verdict", "order submitted"]
+    for message in steps:
         await recorder.record(
             Environment.DEMO, EventCategory.STRATEGY, message, correlation_id=correlation_id
         )
     await recorder.flush()
-    assert [event.message for event in sink.events] == ["proposal", "risk verdict", "order submitted"]
+    assert [event.message for event in sink.events] == steps
     assert {event.correlation_id for event in sink.events} == {correlation_id}
 
 
