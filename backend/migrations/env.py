@@ -1,6 +1,7 @@
 """Alembic environment. The database URL comes from Mooo Settings (DATABASE_URL)."""
 
 import asyncio
+from collections.abc import Mapping
 from logging.config import fileConfig
 
 from alembic import context
@@ -9,13 +10,20 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 from mooo_core.config import load_settings_or_exit
-from mooo_core.db import Base
+from mooo_core.models import metadata
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-target_metadata = Base.metadata
+target_metadata = metadata
+
+
+def _include_name(name: str | None, type_: str, parent_names: Mapping[str, str | None]) -> bool:
+    """Compare only tables the models declare. Monthly partitions are managed separately."""
+    if type_ == "table":
+        return name in target_metadata.tables
+    return True
 
 
 def _database_url() -> str:
@@ -28,13 +36,19 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_name=_include_name,
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def _run_sync_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+        include_name=_include_name,
+    )
     with context.begin_transaction():
         context.run_migrations()
 
