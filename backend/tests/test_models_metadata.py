@@ -12,6 +12,7 @@ GLOBAL_TABLES = {
     "news_provider_configs",
     "backtest_runs",
 }
+RISK_COLUMNS = {"minimum_liquidation_buffer", "regime_leverage_cap", "leverage_reduction_factor"}
 
 
 def _columns() -> list[tuple[str, sa.Column[object]]]:
@@ -72,10 +73,7 @@ def test_no_default_leverage_is_stored() -> None:
         and ("default" in column.name or "target" in column.name)
     ]
     assert offending == []
-    risk = metadata.tables["risk_profiles"]
-    assert {"minimum_liquidation_buffer", "regime_leverage_cap", "leverage_reduction_factor"} <= set(
-        risk.c.keys()
-    )
+    assert set(metadata.tables["risk_profiles"].c.keys()) >= RISK_COLUMNS
 
 
 def test_events_and_snapshots_are_partitioned_by_range() -> None:

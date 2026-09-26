@@ -239,7 +239,8 @@ async def test_opportunity_profile_snapshot_round_trip(db_session: AsyncSession)
     assert latest.id == later.id
     assert set(latest.dimensions) == {"liquidity", "volatility"}
     assert latest.dimensions["liquidity"]["label"] == "High liquidity"
-    assert await DiscoveryRepository(db_session, Environment.LIVE).latest_profile("ETHUSDT") is None
+    live = DiscoveryRepository(db_session, Environment.LIVE)
+    assert await live.latest_profile("ETHUSDT") is None
 
 
 async def test_funnel_counts_and_discovery_settings(db_session: AsyncSession) -> None:
@@ -288,9 +289,8 @@ async def test_deep_analysis_runs_record_usage_and_budget(db_session: AsyncSessi
     assert done.completed_at is not None
     assert (done.input_tokens, done.output_tokens, done.duration_ms) == (1200, 300, 4200)
     assert await repo.count_new_trade_analyses_since(since) == 1
-    assert await AgentRepository(db_session, Environment.LIVE).count_new_trade_analyses_since(
-        since
-    ) == 0
+    live = AgentRepository(db_session, Environment.LIVE)
+    assert await live.count_new_trade_analyses_since(since) == 0
 
 
 async def test_agent_status_starts_in_demo_and_stopped(db_session: AsyncSession) -> None:
@@ -308,7 +308,9 @@ async def test_agent_status_starts_in_demo_and_stopped(db_session: AsyncSession)
 
 async def test_regime_transitions_are_recorded(db_session: AsyncSession) -> None:
     repo = RegimeRepository(db_session, Environment.DEMO)
-    await repo.record_transition("BTCUSDT", from_regime=None, to_regime="trending_up", detected_at=NOW)
+    await repo.record_transition(
+        "BTCUSDT", from_regime=None, to_regime="trending_up", detected_at=NOW
+    )
     await repo.record_transition(
         "BTCUSDT",
         from_regime="trending_up",
@@ -317,7 +319,8 @@ async def test_regime_transitions_are_recorded(db_session: AsyncSession) -> None
     )
     recent = await repo.recent_transitions("BTCUSDT")
     assert [t.to_regime for t in recent] == ["range", "trending_up"]
-    assert await RegimeRepository(db_session, Environment.LIVE).recent_transitions("BTCUSDT") == []
+    live = RegimeRepository(db_session, Environment.LIVE)
+    assert await live.recent_transitions("BTCUSDT") == []
 
 
 async def test_news_provider_credentials_are_references_only(db_session: AsyncSession) -> None:
